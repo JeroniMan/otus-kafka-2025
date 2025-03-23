@@ -39,4 +39,5 @@
 <img width="830" alt="Screenshot 2025-03-23 at 16 39 42" src="https://github.com/user-attachments/assets/5cf3f132-a846-48a6-8c3e-36981495e176" />
 
 **Также я добавил простой продьюсер и консьюмер для тестов**
-![Uploading Screenshot 2025-03-23 at 18.00.47.png…]()
+<img width="1093" alt="Screenshot 2025-03-23 at 18 00 47" src="https://github.com/user-attachments/assets/90211c33-ddfc-4605-b1d3-7c08ec65c9aa" />
+
