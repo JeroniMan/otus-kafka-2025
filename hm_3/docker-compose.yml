@@ -1,0 +1,108 @@
+version: '3.8'
+
+services:
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    container_name: zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+      ZOOKEEPER_SYNC_LIMIT: 2
+    ports:
+      - "2181:2181"
+    networks:
+      - kafka-network
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+      - "9101:9101"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: 'zookeeper:2181'
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_JMX_PORT: 9101
+      KAFKA_JMX_HOSTNAME: localhost
+      # Важные настройки для транзакций
+      KAFKA_TRANSACTIONAL_ID_EXPIRATION_MS: 604800000
+      KAFKA_MIN_INSYNC_REPLICAS: 1
+      KAFKA_DEFAULT_REPLICATION_FACTOR: 1
+      KAFKA_NUM_PARTITIONS: 3
+    networks:
+      - kafka-network
+    healthcheck:
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: kafka-ui
+    depends_on:
+      - kafka
+    ports:
+      - "8090:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
+      KAFKA_CLUSTERS_0_ZOOKEEPER: zookeeper:2181
+      KAFKA_CLUSTERS_0_READONLY: false
+    networks:
+      - kafka-network
+
+  init-kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    depends_on:
+      kafka:
+        condition: service_healthy
+    entrypoint: [ '/bin/sh', '-c' ]
+    command: |
+      "
+      # Wait for Kafka to be ready
+      echo 'Waiting for Kafka to be ready...'
+      sleep 5
+
+      # Create topics
+      kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic topic1 --replication-factor 1 --partitions 3 --config min.insync.replicas=1
+      kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic topic2 --replication-factor 1 --partitions 3 --config min.insync.replicas=1
+      
+      echo 'Topics created successfully!'
+      
+      # List topics
+      echo 'Available topics:'
+      kafka-topics --bootstrap-server kafka:29092 --list
+      "
+    networks:
+      - kafka-network
+
+networks:
+  kafka-network:
+    driver: bridge
+
+# Команды для управления:
+#
+# Запуск:
+# docker-compose up -d
+#
+# Остановка:
+# docker-compose down
+#
+# Просмотр логов:
+# docker-compose logs -f kafka
+#
+# Удаление с очисткой данных:
+# docker-compose down -v
+#
+# UI доступен по адресу:
+# http://localhost:8090
