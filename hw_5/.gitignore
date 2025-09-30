@@ -1,0 +1,40 @@
+# .gitignore
+
+# SBT
+target/
+project/target/
+project/project/
+.bsp/
+
+# Scala
+*.class
+*.log
+.scala_dependencies
+.worksheet
+
+# IDE
+.idea/
+.idea_modules/
+.vscode/
+*.iml
+*.ipr
+*.iws
+.metals/
+.bloop/
+metals.sbt
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.bak
+*~
+.*.swp
+
+# Assembly
+*.jar
+
+# Docker
+.docker/
