@@ -170,3 +170,8 @@ docker exec kafka kafka-topics --bootstrap-server localhost:9092 --list
 ```bash
 docker-compose down
 ```
+
+Результаты запуска:
+<img width="1310" height="507" alt="Screenshot 2025-10-01 at 01 37 16" src="https://github.com/user-attachments/assets/7e43eaeb-6be9-4e60-b2ef-940e0f19b29d" />
+<img width="1255" height="613" alt="Screenshot 2025-10-01 at 01 38 55" src="https://github.com/user-attachments/assets/63ef116b-8dd2-4388-bc8a-fdf68bfc00e6" />
+<img width="1257" height="696" alt="Screenshot 2025-10-01 at 01 39 05" src="https://github.com/user-attachments/assets/808ef991-6286-4790-b3f8-0341387a70c8" />
