@@ -1,0 +1,103 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.pdb
+*.so
+*.egg-info/
+.eggs/
+*.manifest
+*.spec
+
+# Virtual environments / Package managers
+.venv/
+.env/
+.uv/
+.venv*/
+.venv*/
+
+# Build / Dist
+build/
+dist/
+*.egg
+*.whl
+
+# IDE / Editor settings
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs / Debug
+logs/
+*.log
+*.out
+*.err
+
+# Cache
+.cache/
+.cache*/
+.cache/
+*.pytest_cache/
+.cache/
+cache/
+.dbt/
+
+# Data & local storage
+data/
+data/clickhouse/
+data/postgres/
+data/redis/
+data/qdrant*
+*.db
+*.sqlite
+*.parquet
+*.arrow
+*.csv
+*.tsv
+*.jsonl
+.DS_Store
+
+# Secrets / Credentials
+secrets/
+secrets/gcp-sa.json
+*.key
+*.pem
+*.crt
+*.env
+.env.*
+*.json   # if contains service account keys
+gcloud-service-key.json
+
+# dbt
+dbt_project/target/
+dbt_project/dbt_packages/
+dbt_packages/
+target/
+
+# Docker
+*.pid
+*.sock
+docker-compose.override.yml
+
+# Kubernetes
+*.kubeconfig
+*.kube/
+
+# Reports / Artifacts
+*.html
+*.md.html
+*.ipynb
+reports/
+artifacts/
+
+# Redis dump
+dump.rdb
+*.aof
+
+# Qdrant snapshots
+*.qdrant
+
+# Jupyter
+.ipynb_checkpoints/

@@ -1,0 +1,137 @@
+version: '3.8'
+
+services:
+  # Redis - Message Queue and Cache
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - ./data/redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - analytics-network
+
+  # Qdrant - Vector Database
+  qdrant:
+    image: qdrant/qdrant:latest
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - ./data/qdrant:/qdrant/storage
+    environment:
+      - QDRANT__SERVICE__GRPC_PORT=6334
+    networks:
+      - analytics-network
+
+  # Slack Bot - Producer
+  slack-bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["slack_bot.main"]
+    environment:
+      - SLACK_BOT_TOKEN=${SLACK_BOT_TOKEN}
+      - SLACK_APP_TOKEN=${SLACK_APP_TOKEN}
+      - SLACK_SIGNING_SECRET=${SLACK_SIGNING_SECRET}
+      - REDIS_URL=redis://redis:6379
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - PYTHONPATH=/app
+    volumes:
+      - ./slack_bot:/app/slack_bot
+      - ./shared:/app/shared
+      - ./logs/slack-bot:/app/logs
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - analytics-network
+
+  # Worker - Consumer
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["workers.main"]
+    environment:
+      # Logging - IMPORTANT!
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - LOG_JSON=${LOG_JSON:-false}
+      - PYTHONUNBUFFERED=1
+
+      # Monitoring
+      - MONITORING_BACKEND=${MONITORING_BACKEND:-langsmith}
+      - LANGSMITH_TRACING=${LANGSMITH_TRACING:-true}
+      - LANGSMITH_API_KEY=${LANGSMITH_API_KEY}
+      - LANGSMITH_PROJECT=${LANGSMITH_PROJECT:-ai-analytics-assistant}
+      - LANGSMITH_ENDPOINT=${LANGSMITH_ENDPOINT:-https://api.smith.langchain.com}
+
+      # Worker config
+      - WORKER_ID=worker-1
+      - WORKER_CONCURRENCY=${WORKER_CONCURRENCY:-1}
+      - REDIS_URL=redis://redis:6379
+
+      # OpenAI
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o-mini}
+
+      # BigQuery
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/secrets/gcp-sa.json
+      - BQ_SOURCE_PROJECT=${BQ_SOURCE_PROJECT:-p2p-data-warehouse}
+      - BQ_RESULTS_PROJECT=${BQ_RESULTS_PROJECT:-p2p-data-ai}
+      - BQ_LOCATION=${BQ_LOCATION:-US}
+      - BQ_RESULTS_DATASET=${BQ_RESULTS_DATASET:-ai_analytics_assistant}
+
+      # Qdrant
+      - QDRANT_ENABLED=${QDRANT_ENABLED:-true}
+      - QDRANT_URL=http://qdrant:6333
+
+      # LangFuse (optional) - подключение к отдельному стеку
+      - LANGFUSE_ENABLED=${LANGFUSE_ENABLED:-false}
+      - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY:-}
+      - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY:-}
+      - LANGFUSE_HOST=${LANGFUSE_HOST:-http://localhost:3000}
+
+      # Logging
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - LOG_JSON=${LOG_JSON:-false}
+      - PYTHONPATH=/app
+    volumes:
+      - ./workers:/app/workers
+      - ./shared:/app/shared
+      - ./prompts:/app/prompts
+      - ./secrets:/app/secrets:ro
+      - ./logs/workers:/app/logs
+      - ./cache:/app/cache
+    depends_on:
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+    restart: unless-stopped
+    deploy:
+      replicas: ${WORKER_REPLICAS:-1}
+    networks:
+      - analytics-network
+    # Better logging driver for Docker
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        labels: "service=worker"
+
+networks:
+  analytics-network:
+    driver: bridge
+
+volumes:
+  redis-data:
+  qdrant-data:

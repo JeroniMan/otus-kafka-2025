@@ -1,0 +1,114 @@
+[project]
+name = "ai-analytics-assistant"
+version = "0.1.0"
+description = "AI Analytics Assistant for BigQuery and dbt"
+requires-python = ">=3.11"
+dependencies = [
+    # Slack dependencies
+    "slack-bolt>=1.18.0",
+    "slack-sdk>=3.23.0",
+    # Redis
+    "redis[hiredis]>=5.0.0",
+    # Web framework
+    "fastapi>=0.104.0",
+    "uvicorn[standard]>=0.24.0",
+    # Data validation and settings
+    "pydantic>=2.5.0",
+    "pydantic-settings>=2.1.0",
+    "python-dotenv>=1.0.0",
+    # Logging
+    "structlog>=24.1.0",
+    # Async HTTP
+    "aiohttp>=3.9.0",
+    "httpx>=0.25.2",
+    # AI/ML dependencies
+    "openai>=1.10.0",
+    "langchain>=0.1.0",
+    "langchain-openai>=0.0.5",
+    "langchain-community>=0.0.10",
+    "langgraph>=0.2.0",
+    "langsmith>=0.1.0",
+    "langfuse>=2.0.0",
+    # Vector database
+    "qdrant-client>=1.7.0",
+    # BigQuery
+    "google-cloud-bigquery>=3.13.0",
+    "google-cloud-bigquery-storage>=2.22.0",
+    "db-dtypes>=1.2.0",
+    # Data processing
+    "pandas>=2.1.0",
+    "pyarrow>=14.0.0",
+    # Utils
+    "python-dateutil>=2.8.2",
+    "pytz>=2023.3",
+    "tabulate>=0.9.0",
+    "aiokafka>=0.12.0",
+    "kafka-python>=2.2.15",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-mock>=3.12.0",
+    "pytest-cov>=4.1.0",
+    "black>=23.0.0",
+    "ruff>=0.1.0",
+    "mypy>=1.5.0",
+    "ipython>=8.0.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+# Указываем, какие пакеты включать в сборку
+[tool.hatch.build.targets.wheel]
+packages = ["slack_bot", "workers", "shared"]
+
+[tool.hatch.build]
+exclude = [
+  "*.pyc",
+  "__pycache__",
+  ".git",
+  "data/",
+  "logs/",
+  "secrets/",
+  "tests/",
+  "*.md",
+  "Dockerfile*",
+  "docker-compose*.yml",
+  "Makefile",
+]
+
+# UV конфигурация - БЕЗ workspace
+[tool.uv]
+package = false  # This is not a package, just a project
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+select = ["E", "W", "F", "I", "B", "C4", "UP"]
+ignore = ["E501", "B008", "C901"]
+
+[tool.ruff.per-file-ignores]
+"__init__.py" = ["F401"]
+
+[tool.black]
+line-length = 100
+target-version = ["py311"]
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short --color=yes"
+asyncio_mode = "auto"
