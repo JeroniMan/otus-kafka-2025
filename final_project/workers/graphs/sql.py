@@ -213,7 +213,7 @@ Return ONLY the SQL query, no explanations."""),
               </input>
 
               <rules>
-                <rule>ALWAYS use the project ID: p2p-data-warehouse</rule>
+                <rule>ALWAYS use the project ID: gcp-project</rule>
                 <rule>For metadata (tables, columns, partitions) use INFORMATION_SCHEMA</rule>
                 <rule>NEVER use placeholder names like 'project', 'your_project', or 'dataset'</rule>
                 <rule>NEVER explain the query, only return the raw SQL</rule>
@@ -239,9 +239,9 @@ Return ONLY the SQL query, no explanations."""),
                                task_id=state.get("task_id"),
                                original_sql=sql[:200])
 
-                sql = sql.replace('your_project', 'p2p-data-warehouse')
-                sql = sql.replace('project.dataset', 'p2p-data-warehouse.raw_solana')
-                sql = sql.replace('`project.', '`p2p-data-warehouse.')
+                sql = sql.replace('your_project', 'gcp-project')
+                sql = sql.replace('project.dataset', 'gcp-project.raw_solana')
+                sql = sql.replace('`project.', '`gcp-project.')
 
             logger.debug("🔍 DEBUG SQL: SQL generated",
                          prompt=prompt,

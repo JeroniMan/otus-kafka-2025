@@ -139,12 +139,12 @@ class Settings(BaseSettings):
 
     # === BigQuery Configuration ===
     bq_source_project: str = Field(
-        default="p2p-data-warehouse",
+        default="gcp-project",
         alias="BQ_SOURCE_PROJECT",
         description="GCP project for reading data"
     )
     bq_results_project: str = Field(
-        default="p2p-data-ai",
+        default="gcp-project",
         alias="BQ_RESULTS_PROJECT",
         description="GCP project for writing results"
     )
