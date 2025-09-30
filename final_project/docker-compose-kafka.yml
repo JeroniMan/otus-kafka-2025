@@ -1,0 +1,243 @@
+version: '3.8'
+
+services:
+  # Redis - Message Queue and Cache (остается для pub/sub и кеширования)
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - ./data/redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - analytics-network
+
+  # Zookeeper для Kafka (NEW)
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    hostname: zookeeper
+    container_name: zookeeper
+    ports:
+      - "2181:2181"
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    volumes:
+      - ./data/zookeeper:/var/lib/zookeeper/data
+      - ./data/zookeeper-logs:/var/lib/zookeeper/log
+    networks:
+      - analytics-network
+    profiles:
+      - kafka
+
+  # Kafka Broker (NEW)
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    hostname: kafka
+    container_name: kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+      - "29092:29092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: 'zookeeper:2181'
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_JMX_PORT: 9101
+      KAFKA_JMX_HOSTNAME: localhost
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
+      KAFKA_LOG_RETENTION_HOURS: 168  # 7 days
+      KAFKA_LOG_SEGMENT_BYTES: 1073741824  # 1GB
+      KAFKA_LOG_RETENTION_CHECK_INTERVAL_MS: 300000  # 5 minutes
+    volumes:
+      - ./data/kafka:/var/lib/kafka/data
+    networks:
+      - analytics-network
+    healthcheck:
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+    profiles:
+      - kafka
+
+  # Kafka UI для мониторинга (NEW)
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: kafka-ui
+    depends_on:
+      - kafka
+    ports:
+      - "8090:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
+      KAFKA_CLUSTERS_0_ZOOKEEPER: zookeeper:2181
+      KAFKA_CLUSTERS_0_READONLY: false
+      KAFKA_CLUSTERS_0_KAFKACONNECT_0_NAME: first
+      KAFKA_CLUSTERS_0_KAFKACONNECT_0_ADDRESS: http://kafka-connect:8083
+    networks:
+      - analytics-network
+    profiles:
+      - kafka
+
+  # Qdrant - Vector Database
+  qdrant:
+    image: qdrant/qdrant:latest
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - ./data/qdrant:/qdrant/storage
+    environment:
+      - QDRANT__SERVICE__GRPC_PORT=6334
+    networks:
+      - analytics-network
+
+  # Slack Bot - Producer
+  slack-bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["slack_bot.main"]
+    environment:
+      # Slack
+      - SLACK_BOT_TOKEN=${SLACK_BOT_TOKEN}
+      - SLACK_APP_TOKEN=${SLACK_APP_TOKEN}
+      - SLACK_SIGNING_SECRET=${SLACK_SIGNING_SECRET}
+
+      # Queue Backend (NEW)
+      - QUEUE_BACKEND=${QUEUE_BACKEND:-redis}
+
+      # Redis (всегда нужен для pub/sub)
+      - REDIS_URL=redis://redis:6379
+
+      # Kafka settings (NEW)
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+      - KAFKA_TOPIC_PENDING=${KAFKA_TOPIC_PENDING:-analytics.tasks.pending}
+      - KAFKA_TOPIC_RETRY=${KAFKA_TOPIC_RETRY:-analytics.tasks.retry}
+      - KAFKA_TOPIC_DLQ=${KAFKA_TOPIC_DLQ:-analytics.tasks.dlq}
+      - KAFKA_TOPIC_UPDATES=${KAFKA_TOPIC_UPDATES:-analytics.updates}
+      - KAFKA_COMPRESSION_TYPE=${KAFKA_COMPRESSION_TYPE:-gzip}
+
+      # Logging
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - PYTHONPATH=/app
+    volumes:
+      - ./slack_bot:/app/slack_bot
+      - ./shared:/app/shared
+      - ./logs/slack-bot:/app/logs
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - analytics-network
+
+  # Worker - Consumer
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["workers.main"]
+    environment:
+      # Queue Backend (NEW)
+      - QUEUE_BACKEND=${QUEUE_BACKEND:-redis}
+
+      # Redis (всегда нужен для pub/sub и кеширования)
+      - REDIS_URL=redis://redis:6379
+
+      # Kafka settings (NEW)
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+      - KAFKA_CONSUMER_GROUP=${KAFKA_CONSUMER_GROUP:-analytics-workers}
+      - KAFKA_TOPIC_PENDING=${KAFKA_TOPIC_PENDING:-analytics.tasks.pending}
+      - KAFKA_TOPIC_RETRY=${KAFKA_TOPIC_RETRY:-analytics.tasks.retry}
+      - KAFKA_TOPIC_DLQ=${KAFKA_TOPIC_DLQ:-analytics.tasks.dlq}
+      - KAFKA_TOPIC_UPDATES=${KAFKA_TOPIC_UPDATES:-analytics.updates}
+      - KAFKA_MAX_POLL_RECORDS=1
+      - KAFKA_AUTO_OFFSET_RESET=${KAFKA_AUTO_OFFSET_RESET:-earliest}
+      - KAFKA_COMPRESSION_TYPE=${KAFKA_COMPRESSION_TYPE:-gzip}
+
+      # Logging
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - LOG_JSON=${LOG_JSON:-false}
+      - PYTHONUNBUFFERED=1
+
+      # Monitoring
+      - MONITORING_BACKEND=${MONITORING_BACKEND:-langsmith}
+      - LANGSMITH_TRACING=${LANGSMITH_TRACING:-true}
+      - LANGSMITH_API_KEY=${LANGSMITH_API_KEY}
+      - LANGSMITH_PROJECT=${LANGSMITH_PROJECT:-ai-analytics-assistant}
+      - LANGSMITH_ENDPOINT=${LANGSMITH_ENDPOINT:-https://api.smith.langchain.com}
+
+      # Worker config
+      - WORKER_ID=worker-${WORKER_ID:-1}
+      - WORKER_CONCURRENCY=${WORKER_CONCURRENCY:-1}
+
+      # OpenAI
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o-mini}
+
+      # BigQuery
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/secrets/gcp-sa.json
+      - BQ_SOURCE_PROJECT=${BQ_SOURCE_PROJECT:-p2p-data-warehouse}
+      - BQ_RESULTS_PROJECT=${BQ_RESULTS_PROJECT:-p2p-data-ai}
+      - BQ_LOCATION=${BQ_LOCATION:-US}
+      - BQ_RESULTS_DATASET=${BQ_RESULTS_DATASET:-ai_analytics_assistant}
+
+      # Qdrant
+      - QDRANT_ENABLED=${QDRANT_ENABLED:-true}
+      - QDRANT_URL=http://qdrant:6333
+
+      # LangFuse (optional)
+      - LANGFUSE_ENABLED=${LANGFUSE_ENABLED:-false}
+      - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY:-}
+      - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY:-}
+      - LANGFUSE_HOST=${LANGFUSE_HOST:-http://localhost:3000}
+
+      # Additional
+      - PYTHONPATH=/app
+    volumes:
+      - ./workers:/app/workers
+      - ./shared:/app/shared
+      - ./prompts:/app/prompts
+      - ./secrets:/app/secrets:ro
+      - ./logs/workers:/app/logs
+      - ./cache:/app/cache
+    depends_on:
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+    restart: unless-stopped
+    deploy:
+      replicas: ${WORKER_REPLICAS:-1}
+    networks:
+      - analytics-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        labels: "service=worker"
+
+networks:
+  analytics-network:
+    driver: bridge
+
+volumes:
+  redis-data:
+  qdrant-data:
+  kafka-data:
+  zookeeper-data:
