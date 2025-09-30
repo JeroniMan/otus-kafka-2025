@@ -1,0 +1,183 @@
+# docker-compose.yml
+# Версия 2.4 поддерживает healthcheck с condition в depends_on
+version: '2.4'
+
+services:
+  # ===========================================
+  # ZOOKEEPER - Координатор для Kafka кластера
+  # ===========================================
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.0.9
+    container_name: zookeeper-otuskafka
+
+    # Healthcheck проверяет что Zookeeper работает в standalone режиме
+    # Это критично для корректного запуска Kafka
+    healthcheck:
+      test: "[[ $$(echo srvr | nc localhost 2181 | grep -oG 'Mode: standalone') = \"Mode: standalone\" ]]"
+      interval: 10s      # Проверка каждые 10 секунд
+      timeout: 1s        # Таймаут на проверку
+      retries: 30        # Максимум 30 попыток = 5 минут на запуск
+
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181          # Порт для подключения клиентов
+      ZOOKEEPER_TICK_TIME: 2000            # Базовая единица времени в мс для Zookeeper
+
+    ports:
+      - "2181:2181"      # Проброс порта для внешних подключений (отладка)
+
+    # Добавляем volume для сохранения состояния Zookeeper
+    volumes:
+      - zookeeper-data:/var/lib/zookeeper/data
+      - zookeeper-logs:/var/lib/zookeeper/log
+
+  # ===========================================
+  # KAFKA BROKER - Основной брокер сообщений
+  # ===========================================
+  kafka1:
+    image: confluentinc/cp-kafka:7.0.9
+    container_name: kafka1-otuskafka
+
+    # Ждем пока Zookeeper полностью запустится и будет здоров
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+
+    # Healthcheck проверяет регистрацию брокера в Zookeeper
+    # Брокер должен появиться в /brokers/ids/1
+    healthcheck:
+      test: "test $$( /usr/bin/zookeeper-shell zookeeper:2181 get /brokers/ids/1 | grep { ) != ''"
+      interval: 3s       # Частая проверка для быстрого старта
+      timeout: 2s
+      retries: 300       # Много попыток, т.к. Kafka может долго стартовать
+
+    environment:
+      # Основные настройки брокера
+      KAFKA_BROKER_ID: 1                                    # ID брокера в кластере
+      KAFKA_ZOOKEEPER_CONNECT: 'zookeeper:2181'            # Адрес Zookeeper
+
+      # Настройка listeners - критично для правильной работы!
+      # PLAINTEXT - для внутренней коммуникации между контейнерами
+      # PLAINTEXT_HOST - для подключения с хост-машины на порт 9091
+      # PLAINTEXT_HOST2 - альтернативный порт 9092 для Python приложения
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT,PLAINTEXT_HOST2:PLAINTEXT
+
+      # Advertised listeners - адреса, которые Kafka сообщает клиентам
+      # kafka1:9191 - для внутренних подключений из Docker сети
+      # localhost:9091/9092 - для подключений с хост-машины
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka1:9191,PLAINTEXT_HOST://localhost:9091,PLAINTEXT_HOST2://localhost:9092
+
+      # Настройки для single-node режима (replication factor = 1)
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1            # Для __consumer_offsets топика
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1               # Минимум in-sync replicas
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1    # Для транзакционного лога
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0            # Без задержки при rebalance
+
+      # Дополнительные настройки для продакшена (раскомментировать при необходимости)
+      # KAFKA_LOG_RETENTION_HOURS: 168                     # Хранить логи 7 дней
+      # KAFKA_LOG_SEGMENT_BYTES: 1073741824                # Размер сегмента 1GB
+      # KAFKA_NUM_PARTITIONS: 3                            # Дефолтное число партиций
+      # KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'false'           # Запретить автосоздание топиков
+
+    ports:
+      - "9191:9191"      # Внутренний listener (для других контейнеров)
+      - "9091:9091"      # Основной порт для хост-машины
+      - "9092:9092"      # Альтернативный порт (используется в Python приложении)
+
+    # Volumes для персистентности данных Kafka
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+      - kafka-secrets:/etc/kafka/secrets
+
+  # ===========================================
+  # KAFDROP - Web UI для мониторинга Kafka
+  # ===========================================
+  kafdrop:
+    image: obsidiandynamics/kafdrop:4.0.1
+    container_name: kafdrop-otuskafka
+    restart: "no"        # Не перезапускать автоматически
+
+    ports:
+      - "9000:9000"      # Web интерфейс
+
+    environment:
+      # Подключение к Kafka через внутренний listener
+      KAFKA_BROKERCONNECT: "kafka1:9191"
+
+      # JVM оптимизации для уменьшения потребления памяти
+      # -XX:-TieredCompilation - отключить многоуровневую компиляцию
+      # -XX:+UseStringDeduplication - дедупликация строк
+      # -noverify - отключить верификацию байткода
+      JVM_OPTS: "-XX:-TieredCompilation -XX:+UseStringDeduplication -noverify"
+
+    depends_on:
+      - "kafka1"
+
+    # Добавляем healthcheck для Kafdrop
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # ===========================================
+  # KAFKA-STREAMS-APP - Python приложение (опционально)
+  # ===========================================
+  # Раскомментировать для запуска приложения в контейнере
+  # kafka-streams-app:
+  #   build: .
+  #   container_name: kafka-streams-app
+  #
+  #   depends_on:
+  #     kafka1:
+  #       condition: service_healthy
+  #
+  #   environment:
+  #     # Переменные окружения для приложения
+  #     KAFKA_BOOTSTRAP_SERVERS: "kafka1:9191"
+  #     FAUST_WEB_PORT: "6066"
+  #     LOG_LEVEL: "INFO"
+  #
+  #   ports:
+  #     - "6066:6066"    # Web API для статистики
+  #
+  #   volumes:
+  #     - ./:/app        # Монтируем код приложения
+  #     - faust-data:/app/event-counter-data
+  #
+  #   command: python kafka_streams_app.py worker -l info
+  #
+  #   restart: unless-stopped
+  #
+  #   # Настройки для разработки
+  #   stdin_open: true
+  #   tty: true
+
+# ===========================================
+# VOLUMES - Персистентное хранилище
+# ===========================================
+volumes:
+  # Zookeeper данные
+  zookeeper-data:
+    driver: local
+  zookeeper-logs:
+    driver: local
+
+  # Kafka данные
+  kafka-data:
+    driver: local
+  kafka-secrets:
+    driver: local
+
+  # Faust/RocksDB данные (для Python приложения)
+  faust-data:
+    driver: local
+
+# ===========================================
+# NETWORKS - Сетевая конфигурация (опционально)
+# ===========================================
+# networks:
+#   kafka-network:
+#     driver: bridge
+#     ipam:
+#       config:
+#         - subnet: 172.25.0.0/16
