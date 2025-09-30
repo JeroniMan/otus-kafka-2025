@@ -73,3 +73,9 @@ Kafka Topic (событие)
 ```
 
 Каждое изменение в базе (INSERT/UPDATE/DELETE) создает событие в Kafka.
+
+Запуск репликации:
+<img width="1451" height="685" alt="Screenshot 2025-09-30 at 23 46 12" src="https://github.com/user-attachments/assets/b4d78095-4616-4394-8caf-4254e941ae9c" />
+<img width="1512" height="848" alt="Screenshot 2025-09-30 at 23 46 45" src="https://github.com/user-attachments/assets/6d8357da-22ad-4238-afce-fd4a5f3ba876" />
+<img width="1240" height="373" alt="Screenshot 2025-09-30 at 23 46 51" src="https://github.com/user-attachments/assets/dc820d7f-4cc5-412c-a87c-e55dd1bb1194" />
+<img width="1448" height="715" alt="Screenshot 2025-09-30 at 23 47 25" src="https://github.com/user-attachments/assets/db2d17c2-a919-4894-b88b-1cbfaf6ffb00" />
