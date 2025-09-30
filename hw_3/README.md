@@ -55,3 +55,8 @@ python consumer.py --read-uncommitted
 ## UI
 
 - http://localhost:8090 - Kafka UI для мониторинга
+
+
+Результат запуска:
+<img width="1003" height="851" alt="Screenshot 2025-09-30 at 00 18 57" src="https://github.com/user-attachments/assets/3ff43956-a852-4b92-81e1-5a7d5843252a" />
+<img width="1021" height="797" alt="Screenshot 2025-09-30 at 00 18 40" src="https://github.com/user-attachments/assets/fb85157c-2cd1-444a-be12-85c32a53d4ac" />
